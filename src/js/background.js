@@ -58,6 +58,8 @@ resetCounter=()=>{
 	sendToOptions({bypassCounter})
 }
 
+if(typeof chrome !== 'undefined') console.warn("The message above can be ignored as it is not an issue. Press the 'Clear all' button.");
+
 // Install handler
 brws.runtime.onInstalled.addListener(details=>{
 	if(details.reason=="install")
@@ -503,7 +505,7 @@ brws.webRequest.onBeforeRequest.addListener(details=>{
 
 brws.webRequest.onBeforeRequest.addListener(details=>{
 	countIt()
-	return {redirectUrl:brws.runtime.getURL("html/crowd-bypassed.html")+details.url.substr(43)}
+	return {redirectUrl:brws.runtime.getURL("html/crowd-bypassed.html")+details.url.substr(39)}
 },{types:["main_frame"],urls:["https://fastforward.team/crowd-bypassed?*"]},["blocking"])
 
 brws.webRequest.onBeforeRequest.addListener(details=>{

@@ -489,6 +489,28 @@ ODP(window, "adtival_base64_encode", {
 // New PRs with bypasses must be added below this comment //
 ///////////////////////////////////////////////////////////////////////////////////////
 
+domainBypass("www.howtofree.org", () => {
+    ensureDomLoaded(() => {
+        document.getElementsByClassName("hide")[1].className = "show";
+    })
+})
+
+domainBypass("download.howtofree.org", () => {
+    ensureDomLoaded(() => {
+        [...document.getElementsByClassName("timer-button")].forEach((elem, index) => {
+            const button = document.createElement("button");
+
+            button.innerHTML = `Download Part ${index + 1}`;
+            button.style.margin = "12px";
+            button.onclick = () => {
+              window.open(elem.getAttribute("data-redirect"), "_blank");
+            };
+            
+            elem.replaceWith(button);
+        });
+    })
+})
+
 hrefBypass(/vk\.com\/away\.php\?to=.+/, () => {
     safelyNavigate(decodeURIComponent(document.URL.match(/vk\.com\/away\.php\?to=([^&]+)/)[1]));
 })
@@ -568,7 +590,7 @@ domainBypass("uploaded.net", () => {
         return setTimeout(f, 100)
     }
 })
-domainBypass(/mylinks\.xyz|mylink\.zone|mylink1\.biz|clink1\.com/, () => {//clictune
+domainBypass(/mylinks\.xyz|mylink\.zone|mylink1\.biz|clink1\.com|dlink2\.com/, () => {//clictune
     window.setTimeout = f => setTimeout(f, 1)
     awaitElement("#compteur a[href]", a => safelyNavigate(new URL(a.href).searchParams.get("url")))
 })
@@ -806,7 +828,7 @@ hrefBypass(/daominhha\.com\/download/, () => {
     str = str.replaceAll(",", "=");
     safelyAssign(atob(str));
 });
-hrefBypass(/(bluemediafiles\.com|pcgamestorrents\.org|bluemediafile\.sbs)\/url-generator\.php\?url=/, () => {
+hrefBypass(/(bluemediafiles\.com|pcgamestorrents\.org|bluemediafile\.sbs|bluemediafile\.site)\/url-generator(-\d+)?\.php\?url=/, () => {
     window.setInterval = f => setInterval(f, 1)
     transparentProperty("Time_Start", t => t - 5000)
     awaitElement("input#nut[src]", i => i.parentNode.submit())
@@ -820,6 +842,180 @@ hrefBypass(myDramaListRegex, () => {
     safelyNavigate(decodeURIComponent(document.URL.split(/\bmydramalist\.com\/redirect\?q=/)[1]))
 })
 //Insertion point for bypasses running before the DOM is loaded.
+domainBypass("gocmod.com", () => {
+    const url = new URL(window.location.href);
+    const actualLink = url.searchParams.get("urls");
+    if (actualLink) {
+        safelyNavigate(actualLink);
+    }
+})
+domainBypass("bstlar.com", () => {
+    // boostellar bypass too easy
+    const boostellar_link = encodeURIComponent(location.pathname.slice(1))
+    fetch(`https://bstlar.com/api/link?url=${boostellar_link}`).then(res=>res.json().then((res) => {
+        if (res?.link?.destination_url) {
+            safelyNavigate(res.link.destination_url)
+        }
+    }))
+})
+domainBypass("work.ink", () => {
+    const websocketUrl = "wss://redirect-api.work.ink/v1/ws";
+
+    const [encodedUserId, linkCustom] = window.location.pathname.slice(1).split("/").slice(-2);
+    // decoding encodedUserId
+    const BASE = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    const loopTimes = encodedUserId.length;
+    let decodedUserId = BASE.indexOf(encodedUserId[0]);
+    for (let i = 1; i < loopTimes; i++) decodedUserId = 62 * decodedUserId + BASE.indexOf(encodedUserId[i]);
+
+    const payloads = {
+        announce: JSON.stringify({
+            type: "c_announce",
+            payload: {
+                linkCustom: linkCustom,
+                linkUserId: decodedUserId,
+                referer: "unknown",
+            }
+        }),
+        ping: JSON.stringify({
+            type: "c_ping",
+            payload: {}
+        }),
+        captcha: JSON.stringify({
+            type: "c_recaptcha_response",
+            payload: {
+                "recaptchaResponse": crypto.randomUUID()
+            }
+        }),
+        social: (url) => JSON.stringify({
+            type: "c_social_started",
+            payload: {
+                url
+            }
+        }),
+        readArticles: {
+            1: JSON.stringify({
+                type: "c_monetization",
+                payload: {
+                    type: "readArticles",
+                    payload: {
+                        event: "start"
+                    }
+                }
+            }),
+            2: JSON.stringify({
+                type: "c_monetization",
+                payload: {
+                    type: "readArticles",
+                    payload: {
+                        event: "closeClicked"
+                    }
+                }
+            })
+        },
+        browserExtension: {
+            1: JSON.stringify({
+                type: "c_monetization",
+                payload: {
+                    type: "browserExtension",
+                    payload: {
+                        event: "start"
+                    }
+                }
+            }),
+            2: (token) => JSON.stringify({
+                type: "c_monetization",
+                payload: {
+                    type: "browserExtension",
+                    payload: {
+                        event: "confirm",
+                        token
+                    }
+                }
+            })
+        }
+    }
+
+    let ws = new WebSocket(websocketUrl);
+    let interval;
+    ws.onopen = () => {
+        ws.send(payloads.announce);
+        interval = setInterval(
+            () => ws.send(payloads.ping),
+            10 * 1000
+        )
+    };
+    ws.onclose = () => clearInterval(interval);
+
+    let socials = [];
+    let activeMonetizationTypes = [];
+    ws.onmessage = async (e) => {
+        const sleep = ms => new Promise(r => setTimeout(r, ms));
+        const data = JSON.parse(e.data);
+        if (data.error) return;
+        const payload = data.payload;
+
+        switch (data.type) {
+            case "s_link_info":
+                if (payload.socials) socials.push(...payload.socials);
+                const monetizationTypes = ["readArticles", "browserExtension"];
+                for (const type of monetizationTypes) {
+                    if (payload.monetizationScript.includes(type)) {
+                        activeMonetizationTypes.push(type)
+                    }
+                }
+                break;
+            case "s_start_recaptcha_check":
+                ws.send(payloads.captcha);
+                break;
+            case "s_recaptcha_okay":
+                if (socials.length) {
+                    for (const [index, social] of socials.entries()) {
+                        ws.send(payloads.social(social.url));
+                        await sleep(3 * 1000);
+                    }
+                }
+
+                if (activeMonetizationTypes.length) {
+                    for (const type of activeMonetizationTypes) {
+                        switch (type) {
+                            case "readArticles":
+                                ws.send(payloads.readArticles["1"]);
+                                ws.send(payloads.readArticles["2"]);
+                                break;
+                            case "browserExtension":
+                                if (activeMonetizationTypes.includes("readArticles")) await sleep(16 * 1000);
+                                ws.send(payloads.browserExtension["1"])
+                                break;
+                        }
+                    }
+                }
+                break;
+            case "s_monetization":
+                if (payload.type !== "browserExtension") break;
+                ws.send(payloads.browserExtension["2"](payload.payload.token))
+                break;
+            case "s_link_destination":
+                const url = new URL(payload.url);
+                if (url.searchParams.has("duf")) {
+                    return safelyNavigate(window.atob(url.searchParams.get("duf").split("").reverse().join("")))
+                };
+                safelyNavigate(payload.url);
+                break;
+        }
+    }
+});
+domainBypass("workink.click", async () => {
+    const uuid = new URLSearchParams(window.location.search).get("t")
+    fetch(`https://redirect-api.work.ink/externalPopups/${uuid}/pageOpened`);
+    await new Promise(r => setTimeout(r, 11 * 1000));
+    const { destination } = await fetch(`https://redirect-api.work.ink/externalPopups/${uuid}/destination`).then(r => r.json());
+    const url = new URL(destination);
+    if (url.searchParams.has("duf")) {
+        return safelyNavigate(window.atob(url.searchParams.get("duf").split("").reverse().join("")))
+    };
+    return safelyNavigate(destination);
+});
 hrefBypass(/https:\/\/crackedappsstore\.com\/(?:\\.|[^\\])*\/\?download.*/gm, () => ifElement("a.downloadAPK.dapk_b[href]", a => safelyAssign(a.href)))
 domainBypass("downloadr.in", () => safelyNavigate(new URL(location.href).search.slice(1)))
 domainBypass(/^((www\.)?((njiir|healthykk|linkasm|dxdrive|getwallpapers|sammobile|ydfile|mobilemodsapk|dlandroid|download\.modsofapk)\.com|(punchsubs|zedge|fex)\.net|k2s\.cc|muhammadyoga\.me|u\.to|skiplink\.io|(uploadfree|freeupload)\.info|fstore\.biz))$/, () => window.setInterval = f => setInterval(f, 1))
@@ -1837,8 +2033,39 @@ ensureDomLoaded(() => {
             safelyNavigate(newurl)
         }
     })
+	hrefBypass(/linkvip\.io\/v\//, async () => {
+		var campId = document.querySelector('input[name="campId"]').value;
+		var linkId = document.querySelector('input[name="linkId"]').value;
+
+		var frmData = new FormData();
+		frmData.append('campId', campId);
+		var res = await fetch('https://linkvip.io/graph/api?action=getCodeCamp', {
+			method: 'POST',
+			body: frmData,
+		});
+		var data = await res.json();
+		if (!data.status) return console.error('getCodeCamp');
+
+		var codeOTP = data.message;
+
+		var frmData = new FormData();
+		frmData.append('campId', campId);
+		frmData.append('linksId', linkId);
+		frmData.append('codeOTP', codeOTP);
+		var res = await fetch('https://linkvip.io/graph/api?action=confirmCode', {
+			method: 'POST',
+			body: frmData,
+		});
+		var data = await res.json();
+		if (!data.status) return console.error('confirmCode');
+
+		safelyNavigate(data.message);
+	})
 
     // Insertion point for domain-or-href-specific bypasses running after the DOM is loaded. Bypasses here will no longer need to call ensureDomLoaded.
+    hrefBypass(/.*\/s\?[A-Za-z0-9]{3}/, () => {
+        safelyNavigate(document.scripts[0].textContent.split("link: '")[1].split("'")[0])
+    })
     domainBypass("cutin.it", () => {
         const url = [...document.getElementsByTagName("script")].filter(elem => elem.innerText !== "")[3].innerText.split("\n")[14].split(" ")[9].replace(";", "").replaceAll("\"", "")
         safelyNavigate(url)
@@ -1860,7 +2087,7 @@ ensureDomLoaded(() => {
         document.getElementsByClassName("timed-content-client_show_0_05_0")[0].style = ""
     })
     domainBypass("dereferer.me", () => {
-        const url = window.location.href.split("?")[1]
+        const url = window.location.href.split("?").slice(1).join("?")
         safelyNavigate(url)
     })
     domainBypass("bluemediafiles.com", () => {
@@ -1900,11 +2127,18 @@ ensureDomLoaded(() => {
             }
         }
     })
-    domainBypass("megadb.net", () => {
-        ifElement("form[name='F1']", function (a) {
-            a.submit();
-        });
-    });
+//     domainBypass("megadb.net", () => {
+//         ifElement("form[name='F1']", function (a) {
+//             a.submit();
+//         });
+//     });
+    domainBypass(/^megaup.net$/, () => {
+        seconds = 0
+	
+        awaitElement("input#btnsubmit", btn => {
+            btn.click()
+        })
+    })
     hrefBypass(/enxf\.net\/resources\/[a-zA-Z-\.\d]+\/download/, () => {
         ifElement(".XGT-Download-form", ex => safelyNavigate(ex.action));
     })
@@ -2510,13 +2744,15 @@ ensureDomLoaded(() => {
             safelyNavigate(a.href)
         })
     })
-    domainBypass("allkeyshop.com", () => {
-        if (location.pathname.includes("outgoinglink/link/")) {
-            ifElement("a", a => {
+
+    domainBypass("click.allkeyshop.com", () => {
+        if (location.pathname.includes("/offer/")) {
+            awaitElement("body a", a => {
                 safelyNavigate(a.href)
             })
         }
     })
+
     hrefBypass(/sharemods\.com\/([a-z0-9]{12})\//, () => {
         awaitElement("#dForm", a => (a.submit()));
     })
@@ -2535,7 +2771,10 @@ ensureDomLoaded(() => {
         })
     })
 
-
+    hrefBypass(/(blitly\.io|smartlink\.vip)\/st/, () => {
+        const target_url = new URLSearchParams(window.location.search).get('url')
+        safelyNavigate(target_url)
+    })
 
     hrefBypass(/mirrored\.to\/files\//, () => {
         if (location.href.includes('hash')) return; // we already bypassed to here
@@ -2554,7 +2793,7 @@ ensureDomLoaded(() => {
     });
     domainBypass("filedm.com", () => {
         awaitElement("a#dlbutton", a => {
-            safelyNavigate("http://cdn.directdl.xyz/getfile?id=" + a.href.split("_")[1])
+            safelyNavigate("http://cdn.directfiledl.com/getfile?id=" + a.href.split("_")[1])
         }
         )
     })
@@ -2638,6 +2877,15 @@ ensureDomLoaded(() => {
         ifElement("body > div > h1 > span", a => {
 	    safelyNavigate(a.innerHTML)
         })
+    })
+    
+    // otomi-games.com
+     domainBypass("otomi-games.com", () => {
+        ensureDomLoaded(() => {
+            ifElement("#wpsafe-link a", a => {
+                safelyNavigate(a.href) 
+            })
+        })      
     })
 
     //Insertion point for bypasses detecting certain DOM elements. Bypasses here will no longer need to call ensureDomLoaded.
@@ -2850,36 +3098,77 @@ ensureDomLoaded(() => {
         
         
                         fetch(`https://publisher.linkvertise.com/api/v1/redirect/link/static${linkvertise_link}?X-Linkvertise-UT=${ut}`).then(r => r.json()).then(json => {
-                            if (json?.data.link.target_type !== 'URL') {
-                                return insertInfoBox('Due to copyright reasons we are not bypassing linkvertise stored content (paste, download etc)');
+                            let target_type = json?.data.link.target_type
+                            const make_serial = () => {
+                                return btoa(JSON.stringify({
+                                    timestamp: new Date().getTime(),
+                                    random: "6548307",
+                                    link_id: json.data.link.id
+                                }))
                             }
-                            if (json?.data.link.id) {
-                                const json_body = {
-                                    serial: btoa(JSON.stringify({
-                                        timestamp:new Date().getTime(),
-                                        random:"6548307",
-                                        link_id:json.data.link.id
-                                    })),
-                                    token: target_token
+                            const pathmap = {
+                                "URL": () => {
+                                    if (json?.data.link.id) {
+                                        const json_body = {
+                                            serial: make_serial(),
+                                            token: target_token
+                                        }
+                                        fetch(`https://publisher.linkvertise.com/api/v1/redirect/link${linkvertise_link}/target?X-Linkvertise-UT=${ut}`, {
+                                            method: "POST",
+                                            body: JSON.stringify(json_body),
+                                            headers: {
+                                                "Accept": 'application/json',
+                                                "Content-Type": 'application/json'
+                                            }
+                                        }).then(r=>r.json()).then(json=>{
+                                            if (json?.data.target) {
+                                                safelyNavigate(json.data.target)
+                                            }
+                                        })
+                                    }
+                                },
+                                "PASTE": () => {
+                                    if (json?.data.link.id) {
+                                        const json_body = {
+                                            serial: make_serial(),
+                                            token: target_token
+                                        }
+                                        fetch(`https://publisher.linkvertise.com/api/v1/redirect/link${linkvertise_link}/paste?X-Linkvertise-UT=${ut}`, {
+                                            method: "POST",
+                                            body: JSON.stringify(json_body),
+                                            headers: {
+                                                "Accept": 'application/json',
+                                                "Content-Type": 'application/json'
+                                            }
+                                        }).then(r=>r.json()).then(json=>{
+                                            if (json?.data.paste) {
+                                                insertInfoBox('Bypassed paste! Opening in 3 seconds..')
+                                                setTimeout(() => {
+                                                    window.location.href =
+                                                    URL.createObjectURL(
+                                                        new Blob([json.data.paste], { type: "text/plain" })
+                                                    )
+                                                }, 3000)
+                                            }
+                                        })
+                                    }
                                 }
-                                fetch(`https://publisher.linkvertise.com/api/v1/redirect/link${linkvertise_link}/target?X-Linkvertise-UT=${ut}`, {
-                                    method: "POST",
-                                    body: JSON.stringify(json_body),
-                                    headers: {
-                                        "Accept": 'application/json',
-                                        "Content-Type": 'application/json'
-                                    }
-                                }).then(r=>r.json()).then(json=>{
-                                    if (json?.data.target) {
-                                        safelyNavigate(json.data.target)
-                                    }
-                                })
                             }
+                            if (!pathmap.hasOwnProperty(target_type))
+                                return insertInfoBox(`We currently do not support the "${target_type}" linkvertise type.\nOpen an issue on github to request that we add this type.`);
+                            return pathmap[target_type]()
                         })
                     }
                 });
                 rawOpen.apply(this, arguments);
             }
+        })
+        domainBypass("fssquad.com", () => {
+          ensureDomLoaded(() => {
+            ifElement("div#wpsafe-link", d => {
+                    safelyNavigate(d.getElementsByTagName("a")[0].onclick())
+            })
+          })
         })
     }, 100)
     setTimeout(() => clearInterval(dT), 10000)//

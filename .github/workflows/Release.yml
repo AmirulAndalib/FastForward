@@ -1,0 +1,36 @@
+name: Tag and Release
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version'
+        required: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 'lts/*'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Update version
+        run: echo '${{ github.event.inputs.version }}' > src/version.txt
+
+      - name: Build extension
+        run: node ./scripts/build.js all ver
+
+      - name: Sign for Firefox
+        run: npx web-ext sign --channel=unlisted --source-dir ./build/FastForward.firefox --api-key ${{ secrets.FIREFOX_API_KEY }} --api-secret ${{ secrets.FIREFOX_API_SECRET }}
+
+      - name: Release
+        run: |
+          export GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
+          hub release create -p -a "./web-ext-artifacts/fastforwardteam-${{ github.event.inputs.version }}.xpi#FastForward_Firefox" -a "./build/dist/FastForward_${{ github.event.inputs.version }}_chromium.crx#FastForward_Chromium" -m "Release ${{ github.event.inputs.version }}" ${{ github.event.inputs.version }}
